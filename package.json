@@ -7,10 +7,12 @@
   "private": true,
   "dependencies": {
     "@sap/cds": "^7",
-    "express": "^4",
+    "@sap/cds-hana": "^2",
     "@sap/xssec": "^3",
+    "express": "^4",
+    "npx": "^10.2.2",
     "passport": "^0",
-    "@sap/cds-hana": "^2"
+    "rimraf": "^5.0.5"
   },
   "devDependencies": {
     "@cap-js/sqlite": "^1",
@@ -21,8 +23,20 @@
   },
   "cds": {
     "requires": {
-      "auth": "xsuaa",
-      "db": "hana"
+      "db": "hana",
+      "[production]": {
+        "auth": {
+          "kind": "xsuaa"
+        }
+      },
+      "auth": {
+        "kind": "mocked",
+        "users": {
+          "admin": {
+            "password": "123456"
+          }
+        }
+      }
     }
   }
 }
