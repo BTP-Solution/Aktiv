@@ -1,8 +1,160 @@
-_schema-version: '3.1'
+_schema-version: "3.1"
 ID: Activity
+description: A simple CAP project.
 version: 1.0.0
-description: "A simple CAP project."
+modules:
+- name: Activity-srv
+  type: nodejs
+  path: gen/srv
+  requires:
+  - name: Activity-auth
+  - name: Activity-db
+  provides:
+  - name: srv-api
+    properties:
+      srv-url: ${default-url}
+  parameters:
+    buildpack: nodejs_buildpack
+  build-parameters:
+    builder: npm
+- name: Activity-db-deployer
+  type: hdb
+  path: gen/db
+  requires:
+  - name: Activity-db
+  parameters:
+    buildpack: nodejs_buildpack
+    disk-quota: 1024M
+    memory: 1024M
+- name: Activity
+  type: approuter.nodejs
+  path: app/
+  requires:
+  - name: srv-api
+    group: destinations
+    properties:
+      forwardAuthToken: true
+      name: srv-api
+      url: ~{srv-url}
+  - name: Activity-auth
+  - name: Activity-destination
+    group: destinations
+    properties:
+      forwardAuthToken: false
+      name: ui5
+      url: https://ui5.sap.com
+  parameters:
+    disk-quota: 1024M
+    keep-existing-routes: true
+    memory: 1024M
+- name: Activity-destinations
+  type: com.sap.application.content
+  requires:
+  - name: Activity-auth
+    parameters:
+      service-key:
+        name: Activity-auth-key
+  - name: Activity-html5-repo-host
+    parameters:
+      service-key:
+        name: Activity-html5-repo-host-key
+  - name: srv-api
+  - name: Activity-destination
+    parameters:
+      content-target: true
+  parameters:
+    content:
+      instance:
+        destinations:
+        - Authentication: OAuth2UserTokenExchange
+          Name: Activity-app-srv
+          TokenServiceInstanceName: Activity-auth
+          TokenServiceKeyName: Activity-auth-key
+          URL: ~{srv-api/srv-url}
+          sap.cloud.service: Activity.service
+        - Name: Activity-html5-repo-host
+          ServiceInstanceName: Activity-html5-repo-host
+          ServiceKeyName: Activity-html5-repo-host-key
+          sap.cloud.service: Activity.service
+        - Authentication: OAuth2UserTokenExchange
+          Name: Activity-auth
+          ServiceInstanceName: Activity-auth
+          ServiceKeyName: Activity-auth-key
+          sap.cloud.service: Activity.service
+        existing_destinations_policy: update
+  build-parameters:
+    no-source: true
+- name: Activity-app-content
+  type: com.sap.application.content
+  path: .
+  requires:
+  - name: Activity-html5-repo-host
+    parameters:
+      content-target: true
+  build-parameters:
+    build-result: resources
+    requires:
+    - artifacts:
+      - project1.zip
+      name: project1
+      target-path: resources/
+- name: project1
+  type: html5
+  path: app/project1
+  build-parameters:
+    build-result: dist
+    builder: custom
+    commands:
+    - npm install
+    - npm run build:cf
+    supported-platforms: []
+resources:
+- name: Activity-html5-repo-host
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: html5-apps-repo
+    service-plan: app-host
+- name: Activity-destination
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      HTML5Runtime_enabled: true
+      init_data:
+        instance:
+          destinations:
+          - Authentication: NoAuthentication
+            Name: ui5
+            ProxyType: Internet
+            Type: HTTP
+            URL: https://ui5.sap.com
+          existing_destinations_policy: update
+    service: destination
+    service-plan: lite
+- name: Activity-auth
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      role-collections:
+      - description: Manage Risks
+        name: RiskManager-${space}
+        role-template-references:
+        - $XSAPPNAME.RiskManager
+      - description: View Risks
+        name: RiskViewer-${space}
+        role-template-references:
+        - $XSAPPNAME.RiskViewer
+      tenant-mode: dedicated
+      xsappname: Activity-${org}-${space}
+    path: ./xs-security.json
+    service: xsuaa
+    service-plan: application
+- name: Activity-db
+  type: com.sap.xs.hdi-container
+  parameters:
+    service: hana
+    service-plan: hdi-shared
 parameters:
+  deploy_mode: html5-repo
   enable-parallel-deployments: true
 build-parameters:
   before-all:
@@ -11,58 +163,3 @@ build-parameters:
     - npx cds build --production
     - npx -p @sap/cds-dk cds build --production
     - npx rimraf gen/db/src/gen/data
-modules:
-- name: Activity-srv
-  type: nodejs
-  path: gen/srv
-  parameters:
-    buildpack: nodejs_buildpack
-  build-parameters:
-    builder: npm
-  provides:
-  - name: srv-api # required by consumers of CAP services (e.g. approuter)
-    properties:
-      srv-url: ${default-url}
-  requires:
-  - name: Activity-auth
-  - name: Activity-db
-
-- name: Activity-db-deployer
-  type: hdb
-  path: gen/db
-  parameters:
-    buildpack: nodejs_buildpack
-  requires:
-  - name: Activity-db
-
-- name: Activity
-  type: approuter.nodejs
-  path: app/
-  parameters:
-    keep-existing-routes: true
-    disk-quota: 256M
-    memory: 256M
-  requires:
-  - name: srv-api
-    group: destinations
-    properties:
-      name: srv-api # must be used in xs-app.json as well
-      url: ~{srv-url}
-      forwardAuthToken: true
-  - name: Activity-auth
-
-resources:
-- name: Activity-auth
-  type: org.cloudfoundry.managed-service
-  parameters:
-    service: xsuaa
-    service-plan: application
-    path: ./xs-security.json
-    config:
-      xsappname: Activity-${org}-${space}
-      tenant-mode: dedicated
-- name: Activity-db
-  type: com.sap.xs.hdi-container
-  parameters:
-    service: hana
-    service-plan: hdi-shared
